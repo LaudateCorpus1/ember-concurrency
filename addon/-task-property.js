@@ -561,7 +561,7 @@ objectAssign(TaskProperty.prototype, {
    *
    * [See the advanced concurrency example](/#/docs/task-concurrency-advanced)
    *
-   * @method enqueuePriority
+   * @method enqueueWithPriority
    * @memberof TaskProperty
    * @param {Function} sortFunc The maximum number of concurrently running tasks
    * @instance

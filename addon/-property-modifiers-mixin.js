@@ -2,7 +2,7 @@ import { assert } from '@ember/debug';
 import Scheduler from './-scheduler';
 import {
   enqueueTasksPolicy,
-  enqueuePriorityPolicy,
+  enqueueWithPriorityPolicy,
   dropQueuedTasksPolicy,
   cancelOngoingTasksPolicy,
   dropButKeepLatestPolicy
@@ -25,8 +25,8 @@ export const propertyModifiers = {
     return setBufferPolicy(this, enqueueTasksPolicy);
   },
 
-  enqueuePriority(sortFunc) {
-    return setBufferPolicy(this, Object.assign({ sortFunc }, enqueuePriorityPolicy));
+  enqueueWithPriority(sortFunc) {
+    return setBufferPolicy(this, Object.assign({ sortFunc }, enqueueWithPriorityPolicy));
   },
 
   drop() {
