@@ -7,11 +7,11 @@ module('Unit: enqueueWithPriority');
 test("The `enqueueWithPriority` modifier allows you to control the order that tasks are performed in", function(assert) {
   let performedTasks = [];
   let Obj = Ember.Object.extend({
-    doStuff: task(function * (name, priority) {
+    doStuff: task(function * (name) {
       performedTasks.push(name);
     }).enqueueWithPriority(function(a, b) {
-      let [nameA, priorityA] = a.args;
-      let [nameB, priorityB] = b.args;
+      let priorityA = a.args[1];
+      let priorityB = b.args[1];
       return priorityB - priorityA;
     })
   });
@@ -34,11 +34,11 @@ test("The `enqueueWithPriority` modifier allows you to control the order that ta
 test("The `enqueueWithPriority` modifier allows you to control the order that tasks are performed in (2)", function(assert) {
   let performedTasks = [];
   let Obj = Ember.Object.extend({
-    doStuff: task(function * (name, priority) {
+    doStuff: task(function * (name) {
       performedTasks.push(name);
     }).enqueueWithPriority(function(a, b) {
-      let [nameA, priorityA] = a.args;
-      let [nameB, priorityB] = b.args;
+      let priorityA = a.args[1];
+      let priorityB = b.args[1];
       return priorityB - priorityA;
     })
   });
@@ -61,11 +61,11 @@ test("The `enqueueWithPriority` modifier allows you to control the order that ta
 test("The `enqueueWithPriority` modifier behaves as expected across runloops", function(assert) {
   let performedTasks = [];
   let Obj = Ember.Object.extend({
-    doStuff: task(function * (name, priority) {
+    doStuff: task(function * (name) {
       performedTasks.push(name);
     }).enqueueWithPriority(function(a, b) {
-      let [nameA, priorityA] = a.args;
-      let [nameB, priorityB] = b.args;
+      let priorityA = a.args[1];
+      let priorityB = b.args[1];
       return priorityB - priorityA;
     })
   });
