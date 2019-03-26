@@ -363,18 +363,16 @@ export const Task = EmberObject.extend(TaskStateMixin, {
    *
    */
   perform(...args) {
-    let taskInstance = this._performShared(args, PERFORM_TYPE_DEFAULT, null);
-    this._scheduler.schedule(taskInstance);
-    return taskInstance;
+    return this._performShared(args, PERFORM_TYPE_DEFAULT, null);
   },
 
   performBulk(instances) {
-    let taskInstances = instances.map((instanceArgs) => this._performShared(instanceArgs, PERFORM_TYPE_DEFAULT, null));
+    let taskInstances = instances.map((instanceArgs) => this._performShared(instanceArgs, PERFORM_TYPE_DEFAULT, null, false));
     this._scheduler.scheduleBulk(taskInstances)
     return taskInstances;
   },
 
-  _performShared(args, performType, linkedObject) {
+  _performShared(args, performType, linkedObject, shouldSchedule = true) {
     let fullArgs = this._curryArgs ? [...this._curryArgs, ...args] : args;
     let taskInstance = this._taskInstanceFactory.create({
       fn: this.fn,
@@ -396,6 +394,10 @@ export const Task = EmberObject.extend(TaskStateMixin, {
       // TODO: express this in terms of lifetimes; a task linked to
       // a dead lifetime should immediately cancel.
       taskInstance.cancel();
+    }
+
+    if (shouldSchedule) {
+      this._scheduler.schedule(taskInstance);
     }
 
     return taskInstance;
