@@ -38,7 +38,7 @@ const Scheduler = EmberObject.extend({
         // This tracking logic is kinda spread all over the place...
         // maybe TaskInstances themselves could notify
         // some delegate of queued state changes upon cancelation?
-        taskInstance.task.decrementProperty('numQueued');
+        set(taskInstance.task, 'numQueued', taskInstance.task.numQueued - 1);
       }
 
       taskInstance.cancel(cancelReason);
@@ -51,9 +51,20 @@ const Scheduler = EmberObject.extend({
 
   schedule(taskInstance) {
     set(this, 'lastPerformed', taskInstance);
-    this.incrementProperty('performCount');
-    taskInstance.task.incrementProperty('numQueued');
+    set(this, 'performCount', this.performCount + 1);
+    set(taskInstance.task, 'numQueued', taskInstance.task.numQueued + 1);
     this.queuedTaskInstances.push(taskInstance);
+    this._flushQueues();
+  },
+
+  scheduleBulk(taskInstances) {
+    taskInstances.forEach((taskInstance) => {
+      taskInstance.task.incrementProperty('numQueued');
+    });
+
+    set(this, 'lastPerformed', get(taskInstances, 'lastObject'));
+    this.incrementProperty('performCount', taskInstances.length);
+    this.queuedTaskInstances.push(...taskInstances);
     this._flushQueues();
   },
 
@@ -93,11 +104,11 @@ const Scheduler = EmberObject.extend({
 
   _startTaskInstance(taskInstance) {
     let task = taskInstance.task;
-    task.decrementProperty('numQueued');
-    task.incrementProperty('numRunning');
+    set(task, 'numQueued', task.numQueued - 1);
+    set(task, 'numRunning', task.numRunning + 1);
 
     taskInstance._start()._onFinalize(() => {
-      task.decrementProperty('numRunning');
+      set(task, 'numRunning', task.numRunning - 1);
       var state = taskInstance._completionState;
       set(this, 'lastComplete', taskInstance);
       if (state === 1) {
@@ -129,12 +140,12 @@ function flushTaskCounts(tasks) {
 function updateTaskChainCounts(task) {
   let numRunning = task.numRunning;
   let numQueued  = task.numQueued;
-  let taskGroup = task.get('group');
+  let taskGroup = get(task, 'group');
 
   while (taskGroup) {
     set(taskGroup, 'numRunning', numRunning);
     set(taskGroup, 'numQueued', numQueued);
-    taskGroup = taskGroup.get('group');
+    taskGroup = get(taskGroup, 'group');
   }
 }
 
@@ -142,7 +153,7 @@ function filterFinished(taskInstances) {
   let ret = [];
   for (let i = 0, l = taskInstances.length; i < l; ++i) {
     let taskInstance = taskInstances[i];
-    if (get(taskInstance, 'isFinished') === false) {
+    if (taskInstance.isFinished === false) {
       ret.push(taskInstance);
     }
   }
@@ -150,4 +161,3 @@ function filterFinished(taskInstances) {
 }
 
 export default Scheduler;
-

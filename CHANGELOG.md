@@ -1,4 +1,82 @@
 # Changelog
+
+### 1.2.1
+  - Correct types for encapsulated tasks to allow accessing encapsulated task state (#362, thanks @chancancode!)
+  - Correct types to reflect that Task, TaskInstance, and TaskGroup extend EmberObject (#363, thanks @jamescdavis!)
+
+### 1.2.0
+  - Introduce official TypeScript definitions targetting the last 3 versions of
+    TypeScript. A big, big thank you to @chancancode for this heroic effort!
+    Also, a thank you to all others before who worked on previous iterations of
+    typing experiments for ember-concurrency and provided feedback. **If you were
+    using one of the community-provided solutions or other custom type definitions,
+    you will likely need to remove those and refactor to adhere to the new official
+    types. (#357)
+
+    For more information about using TypeScript with ember-concurrency, please see the new [docs page](https://ember-concurrency.com/docs/typescript)
+
+### 1.1.7
+  - Fix waitForProperty on non-EmberObject hosts (#352. Fixes #292. Thanks @andrewfan for the find!)
+
+### 1.1.6
+  - Add support for `waitForEvent` helper on host objects supporting 'on' API.
+    Previously, `waitForEvent` only supported DOM-like objects with
+    `addEventListener`/`removeEventListener` or jQuery-like objects with `one`/`off`,
+    but did not support those with just `on`/`off`. (#348. Fixes #164)
+
+### 1.1.5
+  - Avoid auto-tracking rerender assertion / infinite rerender during cancelation
+    in certain contexts in Ember 3.15+ (#341, Fixes #340)
+
+### 1.1.4
+  - Avoid auto-tracking rerender assertion thrown in certain contexts in Ember 3.15+
+  - Fix passing tasks into `action` helper directly on Ember 2.8 (yes, 2.8)
+
+### 1.1.3
+  - Fix issue where `rawTimeout`, `waitForEvent`, and `waitForQueue` helper timers
+    were not properly canceled or cleaned up in some cases, such as when used with
+    Task-aware Promise helpers such as `race`. (#331. Fixes #309, #329)
+  - Fix use of Tasks with `action` and `fn` helpers in Ember 3.x (#312, #333. Thanks @thiagofelix for the find!)
+  - [docs] Remove 404'd link on outdated regenerator runtime removal
+  - [docs] Document task syntax for use with ES native classes and Ember Octane
+
+### 1.1.2
+  - _Totally_ fix use of task groups with ES native class/Glimmer components (#324, thanks @jrjohnson)
+  - [dev] Add test coverage for tasks on ES native class/Glimmer components
+
+### 1.1.1
+  - Fix use of task groups with ES native class components (#321, thanks @jrjohnson)
+  - Document and export `rawTimeout` helper in top-level `ember-concurrency` module. (#310, thanks @Turbo87)
+
+### 1.1.0
+  - Babel 7 (#317)
+  - Assert argument is an `Array` for Promise helpers (`race`, `all`, `allSettled`) (#313, thanks @buschtoens!)
+  - Throw an error in `waitForQueue` when queue does not exist (#314, @mydea!)
+  - Resolve warning about colliding `ember-maybe-import-regenerator` versions (#316, thanks @jherdman!)
+  - Fix service injection on nested encapsulated tasks on Ember 3.13+ (#318)
+  - Use `clearTimeout()` instead of `clearInterval()` on timer set with `setTimeout` (#309, thanks @Turbo87!)
+  - Document options for `cancelAll()` (#305, thanks @ggayowsky!)
+  - [dev] Upgrade Ember-CLI to 3.12 (#317)
+  - [dev] Upgrade ember-cli-sass to enable use on Node 12 (#299, thanks @buschtoens!)
+
+### 1.0.0
+  - No changes, just a long overdue 1.0 release :)
+
+### 0.8.27
+  - Fix Ember.Logger deprecations (#266)
+  - Add the ability to `yield forever` to pause a task indefinitely (#274)
+  - Better error messaging for later versions of Ember (#270)
+
+### 0.8.24
+  - cancelAll({ resetState: true }) can remove existing derived state (#253)
+  - fix issue with Ember 3.6.0+ when IE11 is not being targeted (#261)
+
+### 0.8.22
+  - Fixes ember-metal related issues on Ember Canary.
+
+### 0.8.21
+  - Fixes ES5 getter syntax on Ember Canary (#248)
+
 ### 0.8.18
   - Adds `.evented()` task modifier and task lifecycle events.
 
@@ -331,4 +409,3 @@
 ### 0.5.0:
  - First stable version since re-working the docs site
  - No more reliance on js-csp, or CSP concepts whatsoever
-

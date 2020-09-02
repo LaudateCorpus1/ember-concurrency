@@ -1,19 +1,21 @@
+/* eslint-disable no-console */
 import { defer } from 'rsvp';
 import { A } from '@ember/array';
 import Evented from '@ember/object/evented';
 import { run, later } from '@ember/runloop';
 import EmberObject, { computed } from '@ember/object';
 import Ember from 'ember';
-import { task, timeout } from 'ember-concurrency';
+import { task, timeout, forever } from 'ember-concurrency';
 import { module, test } from 'qunit';
+import { gte } from 'ember-compatibility-helpers';
 
-const originalLog = Ember.Logger.log;
-const originalWarn = Ember.Logger.warn;
+const originalLog = console.log;
+const originalWarn = console.warn;
 
 module('Unit: task', function(hooks) {
   hooks.afterEach(function() {
-    Ember.Logger.log = originalLog;
-    Ember.Logger.warn = originalWarn;
+    console.log = originalLog;
+    console.warn = originalWarn;
     Ember.ENV.DEBUG_TASKS = false;
   });
 
@@ -102,6 +104,21 @@ module('Unit: task', function(hooks) {
     });
   });
 
+  test("tasks can be paused indefinitely by yielding `forever`", function(assert) {
+    assert.expect(2);
+
+    let Obj = EmberObject.extend(Evented, {
+      doStuff: task(function * () {
+        yield forever;
+      }).on('init'),
+    });
+
+    let obj = run(() => Obj.create());
+    assert.ok(obj.get('doStuff.isRunning'));
+    run(() => obj.destroy());
+    assert.ok(!obj.get('doStuff.isRunning'));
+  });
+
   test("task.cancelAll cancels all running task instances", function(assert) {
     assert.expect(2);
 
@@ -122,6 +139,54 @@ module('Unit: task', function(hooks) {
 
     assert.deepEqual(instances.mapBy('isCanceled'), [true, true, true]);
     assert.equal(instances[0].get('cancelReason'), "TaskInstance 'doStuff' was canceled because .cancelAll() was explicitly called on the Task. For more information, see: http://ember-concurrency.com/docs/task-cancelation-help");
+  });
+
+  test("task.cancelAll normally preserves the last derived state", function(assert) {
+    assert.expect(2);
+
+    let Obj = EmberObject.extend(Evented, {
+      doStuff: task(function * () {
+        yield timeout(1);
+        return 1;
+      }),
+    });
+
+    let instance;
+    return run(() => {
+      let obj = Obj.create();
+      let task = obj.get('doStuff');
+      instance = task.perform();
+      return instance.then(() => {
+        assert.equal(task.get('lastSuccessful.value'), 1);
+        instance = task.perform();
+        task.cancelAll();
+        assert.equal(task.get('lastSuccessful.value'), 1);
+      });
+    });
+  });
+
+  test("task.cancelAll({ resetState: true }) resets defired state", function(assert) {
+    assert.expect(2);
+
+    let Obj = EmberObject.extend(Evented, {
+      doStuff: task(function * () {
+        yield timeout(1);
+        return 1;
+      }),
+    });
+
+    let instance;
+    return run(() => {
+      let obj = Obj.create();
+      let task = obj.get('doStuff');
+      instance = task.perform();
+      return instance.then(() => {
+        assert.equal(task.get('lastSuccessful.value'), 1);
+        instance = task.perform();
+        task.cancelAll({ resetState: true });
+        assert.ok(!task.get('lastSuccessful.value'), 'expected there to be no last successful value');
+      });
+    });
   });
 
   test("cancelation due to task modifier supplies useful message", function(assert) {
@@ -389,7 +454,7 @@ module('Unit: task', function(hooks) {
     assert.expect(1);
 
     let logs = [];
-    Ember.Logger.log = (...args) => {
+    console.log = (...args) => {
       logs.push(args);
     };
 
@@ -418,7 +483,7 @@ module('Unit: task', function(hooks) {
     Ember.ENV.DEBUG_TASKS = true;
 
     let logs = [];
-    Ember.Logger.log = (...args) => {
+    console.log = (...args) => {
       logs.push(args);
     };
 
@@ -472,7 +537,7 @@ module('Unit: task', function(hooks) {
     assert.expect(2);
 
     let warnings = [];
-    Ember.Logger.warn = (...args) => {
+    console.warn = (...args) => {
       warnings.push(args);
     };
 
@@ -543,7 +608,7 @@ module('Unit: task', function(hooks) {
     assert.expect(1);
 
     let warnings = [];
-    Ember.Logger.warn = (...args) => {
+    console.warn = (...args) => {
       warnings.push(args);
     };
 
@@ -564,4 +629,108 @@ module('Unit: task', function(hooks) {
       ]
     ]);
   });
+
+  test("ES5 getter syntax works", function(assert) {
+    let Obj = EmberObject.extend({
+      es5getterSyntaxSupported: computed(function() {
+        return "yes";
+      }),
+      task: task(function * () {
+        assert.ok(true);
+      }),
+    });
+
+    run(() => {
+      let obj = Obj.create();
+      if (obj.es5getterSyntaxSupported === 'yes') {
+        assert.expect(1);
+        obj.task.perform();
+      } else {
+        assert.expect(0);
+      }
+    });
+  });
+
+  if (gte('3.10.0')) {
+    test("ES classes: syntax with decorators works", function(assert) {
+      const done = assert.async(2);
+
+      class FakeGlimmerComponent {
+        @(task(function* () {
+          assert.ok(this instanceof FakeGlimmerComponent);
+          yield timeout(1);
+          assert.ok(true);
+          done();
+        })) task;
+      }
+
+      run(() => {
+        let obj = new FakeGlimmerComponent();
+        obj.task.perform();
+      });
+
+      later(done, 1);
+    });
+
+    test("ES classes: performing a task on a destroyed object returns an immediately-canceled taskInstance", function(assert) {
+      assert.expect(2);
+
+      class Obj {
+        @(task(function* () {
+          throw new Error("shouldn't get here");
+        })) task;
+
+        get isDestroyed() { return true; }
+        get isDestroying() { return true; }
+      }
+
+      let obj;
+      run(() => {
+        obj = new Obj();
+        assert.equal(obj.task.perform().isDropped, true);
+      });
+
+      run(() => {
+        assert.equal(obj.task.perform().isDropped, true);
+      });
+    });
+
+    test("ES classes: task discontinues after destruction when blocked on async values", function(assert) {
+      let start = assert.async();
+      assert.expect(1);
+
+      class Obj {
+        @(task(function* () {
+          assert.ok(true);
+          yield timeout(1000);
+          assert.ok(false);
+          yield timeout(1000);
+        })) doStuff;
+
+        constructor() {
+          this._isDestroying = false;
+          this._isDestroyed = false;
+          this.doStuff.perform();
+        }
+
+        get isDestroyed() { return this._isDestroyed; }
+        get isDestroying() { return this._isDestroying; }
+
+        willDestroy() {
+          this._isDestroying = true;
+          this._isDestroyed = true;
+        }
+      }
+
+      let obj;
+      run(() => {
+        obj = new Obj();
+      });
+
+      later(() => {
+        obj.willDestroy();
+        start();
+      });
+    });
+  }
 });

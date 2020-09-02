@@ -1,26 +1,27 @@
 import { later, cancel } from '@ember/runloop';
-import { Promise, defer } from 'rsvp';
+import { defer } from 'rsvp';
 import ComputedProperty from '@ember/object/computed';
 import Ember from 'ember';
 
 export function isEventedObject(c) {
   return (c && (
     (typeof c.one === 'function' && typeof c.off === 'function') ||
+    (typeof c.on === 'function' && typeof c.off === 'function') ||
     (typeof c.addEventListener === 'function' && typeof c.removeEventListener === 'function')
   ));
 }
 
-export function Arguments(args, defer) {
-  this.args = args;
-  this.defer = defer;
-}
-
-Arguments.prototype.resolve = function(value) {
-  if (this.defer) {
-    this.defer.resolve(value);
+export class Arguments {
+  constructor(args, defer) {
+    this.args = args;
+    this.defer = defer;
   }
-};
-
+  resolve(value) {
+    if (this.defer) {
+      this.defer.resolve(value);
+    }
+  }
+}
 
 export let objectAssign = Object.assign || function objectAssign(target) {
   'use strict';
@@ -72,7 +73,11 @@ export function _cleanupOnDestroy(owner, object, cleanupMethodName, ...args) {
 export let INVOKE = "__invoke_symbol__";
 
 let locations = [
+  '@ember/-internals/glimmer/index',
+  '@ember/-internals/glimmer',
+  'ember-glimmer',
   'ember-glimmer/helpers/action',
+  'ember-htmlbars/keywords/closure-action',
   'ember-routing-htmlbars/keywords/closure-action',
   'ember-routing/keywords/closure-action'
 ];
@@ -85,6 +90,7 @@ for (let i = 0; i < locations.length; i++) {
 }
 
 // TODO: Symbol polyfill?
+export const cancelableSymbol = "__ec_cancel__";
 export const yieldableSymbol = "__ec_yieldable__";
 export const YIELDABLE_CONTINUE = "next";
 export const YIELDABLE_THROW = "throw";
@@ -93,10 +99,48 @@ export const YIELDABLE_CANCEL = "cancel";
 
 export const _ComputedProperty = ComputedProperty;
 
+export class Yieldable {
+  constructor() {
+    this[yieldableSymbol] = this[yieldableSymbol].bind(this);
+    this[cancelableSymbol] = this[cancelableSymbol].bind(this);
+  }
+
+  then(...args) {
+    return yieldableToPromise(this).then(...args);
+  }
+
+  [yieldableSymbol]() {}
+  [cancelableSymbol]() {}
+}
+
+class TimeoutYieldable extends Yieldable {
+  constructor(ms) {
+    super();
+    this.ms = ms;
+    this.timerId = null;
+  }
+
+  [yieldableSymbol](taskInstance, resumeIndex) {
+    this.timerId = later(() => {
+      taskInstance.proceed(resumeIndex, YIELDABLE_CONTINUE, taskInstance._result);
+    }, this.ms);
+  }
+
+  [cancelableSymbol]() {
+    cancel(this.timerId);
+    this.timerId = null;
+  }
+}
+
 /**
  *
  * Yielding `timeout(ms)` will pause a task for the duration
  * of time passed in, in milliseconds.
+ *
+ * This timeout will be scheduled on the Ember runloop, which
+ * means that test helpers will wait for it to complete before
+ * continuing with the test. See `rawTimeout()` if you need
+ * different behavior.
  *
  * The task below, when performed, will print a message to the
  * console every second.
@@ -116,41 +160,111 @@ export const _ComputedProperty = ComputedProperty;
  *   the task, in milliseconds
  */
 export function timeout(ms) {
-  let timerId;
-  let promise = new Promise(r => {
-    timerId = later(r, ms);
-  });
-  promise.__ec_cancel__ = () => {
-    cancel(timerId);
-  };
-  return promise;
+  return new TimeoutYieldable(ms);
 }
 
-export function RawValue(value) {
-  this.value = value;
+/**
+ *
+ * Yielding `forever` will pause a task indefinitely until
+ * it is cancelled (i.e. via host object destruction, .restartable(),
+ * or manual cancellation).
+ *
+ * This is often useful in cases involving animation: if you're
+ * using Liquid Fire, or some other animation scheme, sometimes you'll
+ * notice buttons visibly reverting to their inactive states during
+ * a route transition. By yielding `forever` in a Component task that drives a
+ * button's active state, you can keep a task indefinitely running
+ * until the animation runs to completion.
+ *
+ * NOTE: Liquid Fire also includes a useful `waitUntilIdle()` method
+ * on the `liquid-fire-transitions` service that you can use in a lot
+ * of these cases, but it won't cover cases of asynchrony that are
+ * unrelated to animation, in which case `forever` might be better suited
+ * to your needs.
+ *
+ * ```js
+ * import { task, forever } from 'ember-concurrency';
+ *
+ * export default Component.extend({
+ *   myService: service(),
+ *   myTask: task(function * () {
+ *     yield this.myService.doSomethingThatCausesATransition();
+ *     yield forever;
+ *   })
+ * });
+ * ```
+ */
+
+class ForeverYieldable extends Yieldable {
+  [yieldableSymbol]() {}
+  [cancelableSymbol]() {}
+}
+
+
+export const forever = new ForeverYieldable();
+
+export class RawValue {
+  constructor(value) {
+    this.value = value;
+  }
 }
 
 export function raw(value) {
   return new RawValue(value);
 }
 
+class RawTimeoutYieldable extends Yieldable {
+  constructor(ms) {
+    super();
+    this.ms = ms;
+    this.timerId = null;
+  }
+
+  [yieldableSymbol](taskInstance, resumeIndex) {
+    this.timerId = setTimeout(() => {
+      taskInstance.proceed(resumeIndex, YIELDABLE_CONTINUE, taskInstance._result);
+    }, this.ms);
+  }
+
+  [cancelableSymbol]() {
+    clearTimeout(this.timerId);
+    this.timerId = null;
+  }
+}
+
+/**
+ *
+ * Yielding `rawTimeout(ms)` will pause a task for the duration
+ * of time passed in, in milliseconds.
+ *
+ * The timeout will use the native `setTimeout()` browser API,
+ * instead of the Ember runloop, which means that test helpers
+ * will *not* wait for it to complete.
+ *
+ * The task below, when performed, will print a message to the
+ * console every second.
+ *
+ * ```js
+ * export default Component.extend({
+ *   myTask: task(function * () {
+ *     while (true) {
+ *       console.log("Hello!");
+ *       yield rawTimeout(1000);
+ *     }
+ *   })
+ * });
+ * ```
+ *
+ * @param {number} ms - the amount of time to sleep before resuming
+ *   the task, in milliseconds
+ */
 export function rawTimeout(ms) {
-  return {
-    [yieldableSymbol](taskInstance, resumeIndex) {
-      let timerId = setTimeout(() => {
-        taskInstance.proceed(resumeIndex, YIELDABLE_CONTINUE, this._result);
-      }, ms);
-      return () => {
-        window.clearInterval(timerId);
-      };
-    }
-  };
+  return new RawTimeoutYieldable(ms);
 }
 
 export function yieldableToPromise(yieldable) {
   let def = defer();
-
-  def.promise.__ec_cancel__ = yieldable[yieldableSymbol]({
+  let thinInstance = {
     proceed(_index, resumeType, value) {
       if (resumeType == YIELDABLE_CONTINUE || resumeType == YIELDABLE_RETURN) {
         def.resolve(value);
@@ -158,7 +272,10 @@ export function yieldableToPromise(yieldable) {
         def.reject(value);
       }
     }
-  }, 0);
+  };
+
+  let maybeDisposer = yieldable[yieldableSymbol](thinInstance, 0);
+  def.promise[cancelableSymbol] = maybeDisposer || yieldable[cancelableSymbol];
 
   return def.promise;
 }

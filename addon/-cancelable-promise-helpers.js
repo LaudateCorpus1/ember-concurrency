@@ -1,6 +1,7 @@
+import { assert } from '@ember/debug';
 import RSVP, { Promise } from 'rsvp';
 import TaskInstance from './-task-instance';
-import { yieldableSymbol } from './utils';
+import { cancelableSymbol, yieldableSymbol } from './utils';
 
 const asyncAll = taskAwareVariantOf(Promise, 'all', identity);
 
@@ -20,9 +21,12 @@ function * resolver(value) {
  *   are canceled), all of the other unfinished `TaskInstance`s will
  *   be automatically canceled.
  *
- * [Check out the "Awaiting Multiple Child Tasks example"](/#/docs/examples/joining-tasks)
+ * [Check out the "Awaiting Multiple Child Tasks example"](/docs/examples/joining-tasks)
  */
 export const all = (things) => {
+  // Extra assertion here to circumvent the `things.length` short circuit.
+  assert(`'all' expects an array.`, Array.isArray(things));
+
   if (things.length === 0) {
     return things;
   }
@@ -77,7 +81,7 @@ export const allSettled = taskAwareVariantOf(RSVP, 'allSettled', identity);
  * - once any of the tasks/promises passed in complete (either success, failure,
  *   or cancelation), any of the {@linkcode TaskInstance}s passed in will be canceled
  *
- * [Check out the "Awaiting Multiple Child Tasks example"](/#/docs/examples/joining-tasks)
+ * [Check out the "Awaiting Multiple Child Tasks example"](/docs/examples/joining-tasks)
  */
 export const race = taskAwareVariantOf(Promise, 'race', identity);
 
@@ -105,6 +109,7 @@ function getValues(obj) {
 function taskAwareVariantOf(obj, method, getItems) {
   return function(thing) {
     let items = getItems(thing);
+    assert(`'${method}' expects an array.`, Array.isArray(items));
     let defer = RSVP.defer();
 
     obj[method](thing).then(defer.resolve, defer.reject);
@@ -117,15 +122,15 @@ function taskAwareVariantOf(obj, method, getItems) {
         if (it) {
           if (it instanceof TaskInstance) {
             it.cancel();
-          } else if (typeof it.__ec_cancel__ === 'function') {
-            it.__ec_cancel__();
+          } else if (typeof it[cancelableSymbol] === 'function') {
+            it[cancelableSymbol]();
           }
         }
       });
     };
 
     let promise = defer.promise.finally(cancelAll);
-    promise.__ec_cancel__ = cancelAll;
+    promise[cancelableSymbol] = cancelAll;
     return promise;
   };
 }

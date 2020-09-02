@@ -1,9 +1,33 @@
-import { timeout } from './utils';
-import { TaskProperty } from './-task-property';
+import Ember from 'ember';
+import { computed } from '@ember/object';
+import { timeout, forever, rawTimeout } from './utils';
+import { Task, TaskProperty } from './-task-property';
 import { didCancel } from './-task-instance';
-import { TaskGroupProperty } from './-task-group';
+import { TaskGroup, TaskGroupProperty } from './-task-group';
 import { all, allSettled, hash, race } from './-cancelable-promise-helpers';
 import { waitForQueue, waitForEvent, waitForProperty } from './-wait-for';
+import { resolveScheduler } from './-property-modifiers-mixin';
+import { gte } from 'ember-compatibility-helpers';
+
+const setDecorator = Ember._setClassicDecorator || Ember._setComputedDecorator;
+
+function _computed(fn) {
+  if (gte('3.10.0')) {
+    let cp = function(proto, key) {
+      if (cp.setup !== undefined) {
+        cp.setup(proto, key);
+      }
+
+      return computed(fn)(...arguments);
+    };
+
+    setDecorator(cp);
+
+    return cp;
+  } else {
+    return computed(fn);
+  }
+}
 
 /**
  * A Task is a cancelable, restartable, asynchronous operation that
@@ -19,9 +43,9 @@ import { waitForQueue, waitForEvent, waitForProperty } from './-wait-for';
  * operations.
  *
  * You can also define an
- * <a href="/#/docs/encapsulated-task">Encapsulated Task</a>
+ * <a href="/docs/encapsulated-task">Encapsulated Task</a>
  * by passing in an object that defined a `perform` generator
- * function property.
+ * method.
  *
  * The following Component defines a task called `myTask` that,
  * when performed, prints a message to the console, sleeps for 1 second,
@@ -47,11 +71,29 @@ import { waitForQueue, waitForEvent, waitForProperty } from './-wait-for';
  * but much of a power of tasks lies in proper usage of Task Modifiers
  * that you can apply to a task.
  *
- * @param {function} generatorFunction the generator function backing the task.
+ * @param {function | object} taskFn A generator function backing the task or an encapsulated task descriptor object with a `perform` generator method.
  * @returns {TaskProperty}
  */
-export function task(...args) {
-  return new TaskProperty(...args);
+export function task(taskFn) {
+  let tp = _computed(function(_propertyName) {
+    tp.taskFn.displayName = `${_propertyName} (task)`;
+    return Task.create({
+      fn: tp.taskFn,
+      context: this,
+      _origin: this,
+      _taskGroupPath: tp._taskGroupPath,
+      _scheduler: resolveScheduler(tp, this, TaskGroup),
+      _propertyName,
+      _debug: tp._debug,
+      _hasEnabledEvents: tp._hasEnabledEvents,
+    });
+  });
+
+  tp.taskFn = taskFn;
+
+  Object.setPrototypeOf(tp, TaskProperty.prototype);
+
+  return tp;
 }
 
 /**
@@ -73,10 +115,22 @@ export function task(...args) {
  * });
  * ```
  *
- * @returns {TaskGroup}
-*/
-export function taskGroup(...args) {
-  return new TaskGroupProperty(...args);
+ * @returns {TaskGroupProperty}
+ */
+export function taskGroup() {
+  let tp = _computed(function(_propertyName) {
+    return TaskGroup.create({
+      context: this,
+      _origin: this,
+      _taskGroupPath: tp._taskGroupPath,
+      _scheduler: resolveScheduler(tp, this, TaskGroup),
+      _propertyName,
+    });
+  });
+
+  Object.setPrototypeOf(tp, TaskGroupProperty.prototype);
+
+  return tp;
 }
 
 export {
@@ -86,7 +140,9 @@ export {
   hash,
   race,
   timeout,
+  rawTimeout,
   waitForQueue,
   waitForEvent,
-  waitForProperty
+  waitForProperty,
+  forever,
 };
